@@ -1,158 +1,158 @@
 name: Check for turnip update
 on:
-  schedule:
-    - cron: "0 0 * * 0" # runs weekly on Sunday at midnight UTC
-  workflow_dispatch:
+    schedule:
+        - cron: "0 0 * * 0" # runs weekly on Sunday at midnight UTC
+    workflow_dispatch:
 jobs:
-  check_for_update:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      actions: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-      - name: Get old version
-        id: get_old_version
-        run: |
-          old_version=""
+    check_for_update:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            actions: write
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v5
+            - name: Get old version
+              id: get_old_version
+              run: |
+                  old_version=""
 
-          # Method 1: Try to read from enable-hw-acceleration file
-          if [ -f "enable-hw-acceleration" ]; then
-            echo "Found enable-hw-acceleration file, attempting to read TURNIP_MESA_VERSION..."
+                  # Method 1: Try to read from enable-hw-acceleration file
+                  if [ -f "enable-hw-acceleration" ]; then
+                    echo "Found enable-hw-acceleration file, attempting to read TURNIP_MESA_VERSION..."
 
-            # Method 1a:
-            old_version=$(grep -E '^\s*TURNIP_MESA_VERSION=' enable-hw-acceleration | cut -d'"' -f2 | head -1)
+                    # Method 1a:
+                    old_version=$(grep -E '^\s*TURNIP_MESA_VERSION=' enable-hw-acceleration | cut -d'"' -f2 | head -1)
 
-            # Method 1b:
-            if [ -z "$old_version" ]; then
-              old_version=$(sed -n 's/^\s*TURNIP_MESA_VERSION="\([^"]*\)".*/\1/p' enable-hw-acceleration | head -1)
-            fi
+                    # Method 1b:
+                    if [ -z "$old_version" ]; then
+                      old_version=$(sed -n 's/^\s*TURNIP_MESA_VERSION="\([^"]*\)".*/\1/p' enable-hw-acceleration | head -1)
+                    fi
 
-            # Method 1c:
-            if [ -z "$old_version" ]; then
-              old_version=$(awk -F'"' '/TURNIP_MESA_VERSION=/ {print $2; exit}' enable-hw-acceleration)
-            fi
+                    # Method 1c:
+                    if [ -z "$old_version" ]; then
+                      old_version=$(awk -F'"' '/TURNIP_MESA_VERSION=/ {print $2; exit}' enable-hw-acceleration)
+                    fi
 
-            # Method 1d:
-            if [ -z "$old_version" ]; then
-              old_version=$(grep "TURNIP_MESA_VERSION" enable-hw-acceleration | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
-            fi
+                    # Method 1d:
+                    if [ -z "$old_version" ]; then
+                      old_version=$(grep "TURNIP_MESA_VERSION" enable-hw-acceleration | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
+                    fi
 
-            if [ -n "$old_version" ]; then
-              echo "Successfully read version from file: $old_version"
-            else
-              echo "Failed to extract TURNIP_MESA_VERSION from enable-hw-acceleration file"
-              echo "Debug: Here's what we found in the file:"
-              grep -n "TURNIP_MESA_VERSION" enable-hw-acceleration || echo "No TURNIP_MESA_VERSION found in file"
-            fi
-          else
-            echo "enable-hw-acceleration file not found"
-          fi
+                    if [ -n "$old_version" ]; then
+                      echo "Successfully read version from file: $old_version"
+                    else
+                      echo "Failed to extract TURNIP_MESA_VERSION from enable-hw-acceleration file"
+                      echo "Debug: Here's what we found in the file:"
+                      grep -n "TURNIP_MESA_VERSION" enable-hw-acceleration || echo "No TURNIP_MESA_VERSION found in file"
+                    fi
+                  else
+                    echo "enable-hw-acceleration file not found"
+                  fi
 
-          # Method 2: Fallback to GitHub releases if file method failed
-          if [ -z "$old_version" ]; then
-            echo "Falling back to GitHub releases method..."
-            old_version=$(gh api repos/${{ github.repository }}/releases \
-              --jq '.[] | select(.tag_name | startswith("turnip-")) | .tag_name' | \
-              sed 's/turnip-//' | \
-              sort -V | \
-              tail -1)
-            if [ -n "$old_version" ]; then
-              echo "Successfully read version from GitHub releases: $old_version"
-            else
-              echo "Failed to get version from GitHub releases"
-            fi
-          fi
+                  # Method 2: Fallback to GitHub releases if file method failed
+                  if [ -z "$old_version" ]; then
+                    echo "Falling back to GitHub releases method..."
+                    old_version=$(gh api repos/${{ github.repository }}/releases \
+                      --jq '.[] | select(.tag_name | startswith("turnip-")) | .tag_name' | \
+                      sed 's/turnip-//' | \
+                      sort -V | \
+                      tail -1)
+                    if [ -n "$old_version" ]; then
+                      echo "Successfully read version from GitHub releases: $old_version"
+                    else
+                      echo "Failed to get version from GitHub releases"
+                    fi
+                  fi
 
-          # Exit with error if both methods failed
-          if [ -z "$old_version" ]; then
-            echo "ERROR: Unable to determine current turnip version using any method"
-            echo "- enable-hw-acceleration file not found or doesn't contain TURNIP_MESA_VERSION"
-            echo "- No turnip releases found in GitHub repository"
-            exit 1
-          fi
+                  # Exit with error if both methods failed
+                  if [ -z "$old_version" ]; then
+                    echo "ERROR: Unable to determine current turnip version using any method"
+                    echo "- enable-hw-acceleration file not found or doesn't contain TURNIP_MESA_VERSION"
+                    echo "- No turnip releases found in GitHub repository"
+                    exit 1
+                  fi
 
-          echo "old_version=$old_version" >> $GITHUB_OUTPUT
-          echo "Current turnip version: $old_version"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  echo "old_version=$old_version" >> $GITHUB_OUTPUT
+                  echo "Current turnip version: $old_version"
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get new version
-        id: get_new_version
-        run: |
-          # Extract only stable releases (exclude rc, alpha, beta versions)
-          # Match pattern: mesa-X.Y.Z.tar.xz (not mesa-X.Y.Z-rcN.tar.xz)
-          latest_version=$(curl -fsSL "https://archive.mesa3d.org/" | \
-            sed -rn 's/.*href="mesa-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.xz".*/\1/p' | \
-            sort -Vr | \
-            head -1)
+            - name: Get new version
+              id: get_new_version
+              run: |
+                  # Extract only stable releases (exclude rc, alpha, beta versions)
+                  # Match pattern: mesa-X.Y.Z.tar.xz (not mesa-X.Y.Z-rcN.tar.xz)
+                  latest_version=$(curl -fsSL "https://archive.mesa3d.org/" | \
+                    sed -rn 's/.*href="mesa-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.xz".*/\1/p' | \
+                    sort -Vr | \
+                    head -1)
 
-          if [ -z "$latest_version" ]; then
-            echo "ERROR: Could not find any stable Mesa releases"
-            exit 1
-          fi
+                  if [ -z "$latest_version" ]; then
+                    echo "ERROR: Could not find any stable Mesa releases"
+                    exit 1
+                  fi
 
-          echo "latest_version=$latest_version" >> $GITHUB_OUTPUT
-          echo "Latest stable Mesa version: $latest_version"
+                  echo "latest_version=$latest_version" >> $GITHUB_OUTPUT
+                  echo "Latest stable Mesa version: $latest_version"
 
-      - name: Compare versions
-        id: compare_versions
-        run: |
-          old_version="${{ steps.get_old_version.outputs.old_version }}"
-          latest_version="${{ steps.get_new_version.outputs.latest_version }}"
+            - name: Compare versions
+              id: compare_versions
+              run: |
+                  old_version="${{ steps.get_old_version.outputs.old_version }}"
+                  latest_version="${{ steps.get_new_version.outputs.latest_version }}"
 
-          echo "Comparing versions: $old_version vs $latest_version"
+                  echo "Comparing versions: $old_version vs $latest_version"
 
-          # Compare versions using sort -V
-          if [ "$old_version" = "$latest_version" ]; then
-            echo "need_update=false" >> $GITHUB_OUTPUT
-            echo "Versions are the same, no update needed"
-          elif printf '%s\n%s\n' "$old_version" "$latest_version" | sort -V -C; then
-            # If sort -V -C succeeds, it means old_version comes before or equals latest_version
-            # Since we already checked equality above, old_version < latest_version
-            echo "need_update=true" >> $GITHUB_OUTPUT
-            echo "Update needed: $old_version -> $latest_version"
-          else
-            # If sort -V -C fails, it means the input is not in ascending order
-            # So old_version > latest_version
-            echo "need_update=false" >> $GITHUB_OUTPUT
-            echo "Current version ($old_version) is newer than latest ($latest_version), no update needed"
-          fi
+                  # Compare versions using sort -V
+                  if [ "$old_version" = "$latest_version" ]; then
+                    echo "need_update=false" >> $GITHUB_OUTPUT
+                    echo "Versions are the same, no update needed"
+                  elif printf '%s\n%s\n' "$old_version" "$latest_version" | sort -V -C; then
+                    # If sort -V -C succeeds, it means old_version comes before or equals latest_version
+                    # Since we already checked equality above, old_version < latest_version
+                    echo "need_update=true" >> $GITHUB_OUTPUT
+                    echo "Update needed: $old_version -> $latest_version"
+                  else
+                    # If sort -V -C fails, it means the input is not in ascending order
+                    # So old_version > latest_version
+                    echo "need_update=false" >> $GITHUB_OUTPUT
+                    echo "Current version ($old_version) is newer than latest ($latest_version), no update needed"
+                  fi
 
-      - name: Trigger turnip build
-        if: steps.compare_versions.outputs.need_update == 'true'
-        run: |
-          echo "Triggering turnip build workflow with Mesa version: ${{ steps.get_new_version.outputs.latest_version }}"
+            - name: Trigger turnip build
+              if: steps.compare_versions.outputs.need_update == 'true'
+              run: |
+                  echo "Triggering turnip build workflow with Mesa version: ${{ steps.get_new_version.outputs.latest_version }}"
 
-          # Retry loop logic
-          max_retries=3
-          count=0
-          success=false
+                  # Retry loop logic
+                  max_retries=3
+                  count=0
+                  success=false
 
-          while [ $count -lt $max_retries ]; do
-            if gh workflow run turnip-builder.yml --ref main --field mesa_version="${{ steps.get_new_version.outputs.latest_version }}"; then
-              echo "✅ Workflow triggered successfully"
-              success=true
-              break
-            else
-              count=$((count + 1))
-              echo "⚠️ Failed to trigger workflow (Attempt $count/$max_retries)"
-              if [ $count -lt $max_retries ]; then
-                echo "Retrying in 10 seconds..."
-                sleep 10
-              fi
-            fi
-          done
+                  while [ $count -lt $max_retries ]; do
+                    if gh workflow run turnip-builder.yml --ref main --field mesa_version="${{ steps.get_new_version.outputs.latest_version }}"; then
+                      echo "✅ Workflow triggered successfully"
+                      success=true
+                      break
+                    else
+                      count=$((count + 1))
+                      echo "⚠️ Failed to trigger workflow (Attempt $count/$max_retries)"
+                      if [ $count -lt $max_retries ]; then
+                        echo "Retrying in 10 seconds..."
+                        sleep 10
+                      fi
+                    fi
+                  done
 
-          if [ "$success" = false ]; then
-            echo "❌ Failed to trigger workflow after $max_retries attempts"
-            exit 1
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  if [ "$success" = false ]; then
+                    echo "❌ Failed to trigger workflow after $max_retries attempts"
+                    exit 1
+                  fi
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: No update needed
-        if: steps.compare_versions.outputs.need_update == 'false'
-        run: |
-          echo "No update needed. Current version ${{ steps.get_old_version.outputs.old_version }} is up to date with latest Mesa version ${{ steps.get_new_version.outputs.latest_version }}"
+            - name: No update needed
+              if: steps.compare_versions.outputs.need_update == 'false'
+              run: |
+                  echo "No update needed. Current version ${{ steps.get_old_version.outputs.old_version }} is up to date with latest Mesa version ${{ steps.get_new_version.outputs.latest_version }}"
