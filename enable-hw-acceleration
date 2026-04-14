@@ -339,7 +339,7 @@ function setup_turnip_proot() {
 		print_msg "Please check your internet connection"
 		return 1
 	fi
-	"${selected_distro_type}"-distro login "$selected_distro" -- /bin/bash -c "unzip -o $TERMUX_HOME/turnip.zip -d /usr"
+	"${selected_distro_type}"-distro login "$selected_distro" -- /bin/bash -c "unzip -o $TERMUX_HOME/turnip.zip -d /"
 	check_and_delete "$TERMUX_HOME/turnip.zip"
 }
 
